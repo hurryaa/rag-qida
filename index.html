@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 知识库助手</title>
+    <!-- Vue 3 CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Markdown 渲染 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <style>
+        /* 自定义样式 */
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        
+        /* 聊天消息样式 */
+        .message-content {
+            line-height: 1.6;
+        }
+        
+        .message-content pre {
+            background-color: #1f2937;
+            color: #e5e7eb;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            margin: 0.5rem 0;
+        }
+        
+        .message-content code {
+            background-color: #f3f4f6;
+            padding: 0.125rem 0.25rem;
+            border-radius: 0.25rem;
+            font-size: 0.875em;
+        }
+        
+        .message-content pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        
+        .message-content p {
+            margin: 0.5rem 0;
+        }
+        
+        .message-content ul, .message-content ol {
+            margin: 0.5rem 0;
+            padding-left: 1.5rem;
+        }
+        
+        /* 打字机光标效果 */
+        .typing-cursor::after {
+            content: '▋';
+            animation: blink 1s step-start infinite;
+        }
+        
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+        
+        /* 滚动条样式 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 3px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        
+        /* 加载动画 */
+        .loading-dots::after {
+            content: '.';
+            animation: dots 1.5s steps(5, end) infinite;
+        }
+        
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60% { content: '...'; }
+            80%, 100% { content: ''; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="app">
+        <!-- 页面容器 -->
+        <div class="container mx-auto px-4 py-8 max-w-6xl">
+            
+            <!-- 头部 -->
+            <header class="mb-8 text-center">
+                <h1 class="text-3xl font-bold text-gray-800 mb-2">
+                    🤖 AI 知识库助手
+                </h1>
+                <p class="text-gray-600">
+                    多用户隔离 · 专属知识库 · 智能对话
+                </p>
+            </header>
+            
+            <!-- 登录/注册区域 -->
+            <div v-if="!isLoggedIn" class="max-w-md mx-auto">
+                <div class="bg-white rounded-xl shadow-lg p-8">
+                    <!-- 标签页切换 -->
+                    <div class="flex mb-6">
+                        <button
+                            @click="authMode = 'login'"
+                            :class="[
+                                'flex-1 py-2 px-4 rounded-lg font-medium transition-colors',
+                                authMode === 'login' 
+                                    ? 'bg-blue-600 text-white' 
+                                    : 'text-gray-600 hover:bg-gray-100'
+                            ]"
+                        >
+                            登录
+                        </button>
+                        <button
+                            @click="authMode = 'register'"
+                            :class="[
+                                'flex-1 py-2 px-4 rounded-lg font-medium transition-colors',
+                                authMode === 'register' 
+                                    ? 'bg-blue-600 text-white' 
+                                    : 'text-gray-600 hover:bg-gray-100'
+                            ]"
+                        >
+                            注册
+                        </button>
+                    </div>
+                    
+                    <!-- 登录表单 -->
+                    <form v-if="authMode === 'login'" @submit.prevent="handleLogin">
+                        <div class="mb-4">
+                            <label class="block text-gray-700 text-sm font-medium mb-2">
+                                用户名
+                            </label>
+                            <input
+                                v-model="loginForm.username"
+                                type="text"
+                                required
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                                placeholder="请输入用户名"
+                            >
+                        </div>
+                        <div class="mb-6">
+                            <label class="block text-gray-700 text-sm font-medium mb-2">
+                                密码
+                            </label>
+                            <input
+                                v-model="loginForm.password"
+                                type="password"
+                                required
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                                placeholder="请输入密码"
+                            >
+                        </div>
+                        <button
+                            type="submit"
+                            :disabled="authLoading"
+                            class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-2 px-4 rounded-lg transition duration-200"
+                        >
+                            {{ authLoading ? '登录中...' : '登录' }}
+                        </button>
+                    </form>
+                    
+                    <!-- 注册表单 -->
+                    <form v-if="authMode === 'register'" @submit.prevent="handleRegister">
+                        <div class="mb-4">
+                            <label class="block text-gray-700 text-sm font-medium mb-2">
+                                用户名
+                            </label>
+                            <input
+                                v-model="registerForm.username"
+                                type="text"
+                                required
+                                minlength="3"
+                                maxlength="50"
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                                placeholder="3-50个字符"
+                            >
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-gray-700 text-sm font-medium mb-2">
+                                密码
+                            </label>
+                            <input
+                                v-model="registerForm.password"
+                                type="password"
+                                required
+                                minlength="6"
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                                placeholder="至少6个字符"
+                            >
+                        </div>
+                        <div class="mb-6">
+                            <label class="block text-gray-700 text-sm font-medium mb-2">
+                                确认密码
+                            </label>
+                            <input
+                                v-model="registerForm.passwordConfirm"
+                                type="password"
+                                required
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                                placeholder="请再次输入密码"
+                            >
+                        </div>
+                        <button
+                            type="submit"
+                            :disabled="authLoading"
+                            class="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium py-2 px-4 rounded-lg transition duration-200"
+                        >
+                            {{ authLoading ? '注册中...' : '注册并创建知识库' }}
+                        </button>
+                        <p class="mt-4 text-sm text-gray-500 text-center">
+                            注册将自动为您创建专属知识库
+                        </p>
+                    </form>
+                    
+                    <!-- 错误提示 -->
+                    <div v-if="authError" class="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+                        {{ authError }}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 主界面（登录后显示） -->
+            <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <!-- 左侧边栏：用户信息和文件上传 -->
+                <div class="lg:col-span-1 space-y-6">
+                    <!-- 用户信息卡片 -->
+                    <div class="bg-white rounded-xl shadow p-6">
+                        <div class="flex items-center mb-4">
+                            <div class="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white text-xl font-bold">
+                                {{ currentUser.username.charAt(0).toUpperCase() }}
+                            </div>
+                            <div class="ml-4">
+                                <p class="font-semibold text-gray-800">{{ currentUser.username }}</p>
+                                <p class="text-sm text-gray-500">已登录</p>
+                            </div>
+                        </div>
+                        <button
+                            @click="logout"
+                            class="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-4 rounded-lg transition"
+                        >
+                            退出登录
+                        </button>
+                    </div>
+                    
+                    <!-- 文件上传卡片 -->
+                    <div class="bg-white rounded-xl shadow p-6">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                            📁 上传文档
+                        </h3>
+                        <div
+                            @dragover.prevent
+                            @drop.prevent="handleFileDrop"
+                            :class="[
+                                'border-2 border-dashed rounded-lg p-6 text-center transition cursor-pointer',
+                                isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400'
+                            ]"
+                            @dragenter="isDragging = true"
+                            @dragleave="isDragging = false"
+                            @click="$refs.fileInput.click()"
+                        >
+                            <input
+                                ref="fileInput"
+                                type="file"
+                                accept=".pdf,.docx,.txt,.md"
+                                class="hidden"
+                                @change="handleFileSelect"
+                            >
+                            <div v-if="!uploadingFile">
+                                <p class="text-gray-600 mb-2">
+                                    {{ isDragging ? '释放以上传文件' : '点击或拖拽文件到这里' }}
+                                </p>
+                                <p class="text-sm text-gray-400">
+                                    支持 PDF、DOCX、TXT、MD
+                                </p>
+                            </div>
+                            <div v-else class="py-2">
+                                <p class="text-blue-600 font-medium">{{ uploadingFile.name }}</p>
+                                <p class="text-sm text-gray-500">{{ uploadingProgress }}%</p>
+                            </div>
+                        </div>
+                        
+                        <!-- 上传进度 -->
+                        <div v-if="uploading" class="mt-4">
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div 
+                                    class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                    :style="{ width: uploadingProgress + '%' }"
+                                ></div>
+                            </div>
+                            <p class="text-sm text-gray-500 mt-1 text-center">
+                                上传中<span class="loading-dots"></span>
+                            </p>
+                        </div>
+                        
+                        <!-- 上传结果 -->
+                        <div v-if="uploadResult" :class="[
+                            'mt-4 p-3 rounded-lg text-sm',
+                            uploadResult.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                        ]">
+                            {{ uploadResult.message }}
+                        </div>
+                    </div>
+                    
+                    <!-- 知识库信息 -->
+                    <div class="bg-white rounded-xl shadow p-6">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                            📚 知识库信息
+                        </h3>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between">
+                                <span class="text-gray-500">知识库ID:</span>
+                                <span class="font-mono text-gray-700 truncate" :title="currentUser.fastgpt_dataset_id">
+                                    {{ currentUser.fastgpt_dataset_id.substring(0, 8) }}...
+                                </span>
+                            </div>
+                            <p class="text-gray-500 text-xs">
+                                上传的文档将存储在此知识库中，仅您可见
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 右侧：聊天区域 -->
+                <div class="lg:col-span-2">
+                    <div class="bg-white rounded-xl shadow flex flex-col h-[calc(100vh-200px)] min-h-[500px]">
+                        
+                        <!-- 聊天标题 -->
+                        <div class="px-6 py-4 border-b border-gray-200">
+                            <h3 class="text-lg font-semibold text-gray-800">
+                                💬 智能对话
+                            </h3>
+                        </div>
+                        
+                        <!-- 消息列表 -->
+                        <div 
+                            ref="chatContainer"
+                            class="flex-1 overflow-y-auto p-6 space-y-4"
+                        >
+                            <!-- 空状态 -->
+                            <div v-if="messages.length === 0" class="flex flex-col items-center justify-center h-full text-gray-400">
+                                <p class="text-4xl mb-4">🤖</p>
+                                <p class="text-lg">开始与 AI 助手对话吧</p>
+                                <p class="text-sm">基于您的知识库回答问题</p>
+                            </div>
+                            
+                            <!-- 消息项 -->
+                            <div 
+                                v-for="(msg, index) in messages" 
+                                :key="index"
+                                :class="[
+                                    'flex gap-3',
+                                    msg.role === 'user' ? 'flex-row-reverse' : ''
+                                ]"
+                            >
+                                <!-- 头像 -->
+                                <div :class="[
+                                    'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0',
+                                    msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-green-600 text-white'
+                                ]">
+                                    {{ msg.role === 'user' ? '👤' : '🤖' }}
+                                </div>
+                                
+                                <!-- 消息内容 -->
+                                <div :class="[
+                                    'max-w-[80%] rounded-xl px-4 py-3',
+                                    msg.role === 'user' 
+                                        ? 'bg-blue-600 text-white' 
+                                        : 'bg-gray-100 text-gray-800'
+                                ]">
+                                    <!-- 用户消息 -->
+                                    <p v-if="msg.role === 'user'" class="message-content">
+                                        {{ msg.content }}
+                                    </p>
+                                    <!-- AI 消息（支持 Markdown） -->
+                                    <div v-else class="message-content" v-html="renderMarkdown(msg.content)"></div>
+                                    
+                                    <!-- 加载状态 -->
+                                    <div v-if="msg.loading" class="typing-cursor text-gray-500 mt-1">
+                                        <span class="loading-dots"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 输入区域 -->
+                        <div class="px-6 py-4 border-t border-gray-200">
+                            <form @submit.prevent="sendMessage" class="flex gap-3">
+                                <input
+                                    v-model="userInput"
+                                    type="text"
+                                    :disabled="sending"
+                                    class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                                    placeholder="输入消息，按 Enter 发送..."
+                                >
+                                <button
+                                    type="submit"
+                                    :disabled="!userInput.trim() || sending"
+                                    class="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-medium py-3 px-6 rounded-lg transition duration-200"
+                                >
+                                    {{ sending ? '发送中...' : '发送' }}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+    
+    <script>
+        const { createApp, ref, reactive, nextTick } = Vue;
+        
+        createApp({
+            setup() {
+                // ==================== 响应式数据 ====================
+                
+                // 认证状态
+                const isLoggedIn = ref(false);
+                const currentUser = ref(null);
+                const authMode = ref('login'); // 'login' | 'register'
+                const authLoading = ref(false);
+                const authError = ref('');
+                
+                // 登录表单
+                const loginForm = reactive({
+                    username: '',
+                    password: ''
+                });
+                
+                // 注册表单
+                const registerForm = reactive({
+                    username: '',
+                    password: '',
+                    passwordConfirm: ''
+                });
+                
+                // 文件上传
+                const fileInput = ref(null);
+                const isDragging = ref(false);
+                const uploadingFile = ref(null);
+                const uploading = ref(false);
+                const uploadingProgress = ref(0);
+                const uploadResult = ref(null);
+                
+                // 聊天
+                const messages = ref([]);
+                const userInput = ref('');
+                const sending = ref(false);
+                const chatContainer = ref(null);
+                
+                // ==================== 工具函数 ====================
+                
+                // 渲染 Markdown
+                const renderMarkdown = (text) => {
+                    return marked.parse(text || '');
+                };
+                
+                // 滚动到底部
+                const scrollToBottom = async () => {
+                    await nextTick();
+                    if (chatContainer.value) {
+                        chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
+                    }
+                };
+                
+                // 显示错误
+                const showError = (error) => {
+                    authError.value = error;
+                    setTimeout(() => {
+                        authError.value = '';
+                    }, 5000);
+                };
+                
+                // ==================== 认证相关 ====================
+                
+                // 初始化时检查登录状态
+                const initAuth = async () => {
+                    const savedUser = localStorage.getItem('currentUser');
+                    if (savedUser) {
+                        try {
+                            const user = JSON.parse(savedUser);
+                            // 验证 token 是否有效
+                            const response = await fetch('/api/user/info', {
+                                headers: {
+                                    'Authorization': 'Basic ' + btoa(user.username + ':' + localStorage.getItem(user.username + '_password'))
+                                }
+                            });
+                            if (response.ok) {
+                                const data = await response.json();
+                                if (data.success) {
+                                    isLoggedIn.value = true;
+                                    currentUser.value = data.user;
+                                } else {
+                                    logout();
+                                }
+                            } else {
+                                logout();
+                            }
+                        } catch (e) {
+                            console.error('验证登录状态失败:', e);
+                        }
+                    }
+                };
+                
+                // 登录
+                const handleLogin = async () => {
+                    authLoading.value = true;
+                    authError.value = '';
+                    
+                    try {
+                        const response = await fetch('/api/auth/login', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': 'Basic ' + btoa(loginForm.username + ':' + loginForm.password)
+                            }
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            isLoggedIn.value = true;
+                            currentUser.value = data.user;
+                            // 保存登录信息到 localStorage
+                            localStorage.setItem('currentUser', JSON.stringify(data.user));
+                            localStorage.setItem(data.user.username + '_password', loginForm.password);
+                            // 清空表单
+                            loginForm.username = '';
+                            loginForm.password = '';
+                        } else {
+                            showError(data.detail || '登录失败');
+                        }
+                    } catch (e) {
+                        showError('网络错误，请重试');
+                    } finally {
+                        authLoading.value = false;
+                    }
+                };
+                
+                // 注册
+                const handleRegister = async () => {
+                    // 验证密码
+                    if (registerForm.password !== registerForm.passwordConfirm) {
+                        showError('两次输入的密码不一致');
+                        return;
+                    }
+                    
+                    authLoading.value = true;
+                    authError.value = '';
+                    
+                    try {
+                        const response = await fetch('/api/auth/register', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                username: registerForm.username,
+                                password: registerForm.password
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            // 注册成功后自动登录
+                            isLoggedIn.value = true;
+                            currentUser.value = data.user;
+                            localStorage.setItem('currentUser', JSON.stringify(data.user));
+                            localStorage.setItem(data.user.username + '_password', registerForm.password);
+                            // 清空表单
+                            registerForm.username = '';
+                            registerForm.password = '';
+                            registerForm.passwordConfirm = '';
+                        } else {
+                            showError(data.detail || '注册失败');
+                        }
+                    } catch (e) {
+                        showError('网络错误，请重试');
+                    } finally {
+                        authLoading.value = false;
+                    }
+                };
+                
+                // 退出登录
+                const logout = () => {
+                    if (currentUser.value) {
+                        localStorage.removeItem(currentUser.value.username + '_password');
+                    }
+                    localStorage.removeItem('currentUser');
+                    isLoggedIn.value = false;
+                    currentUser.value = null;
+                    messages.value = [];
+                    userInput.value = '';
+                };
+                
+                // ==================== 文件上传相关 ====================
+                
+                const handleFileSelect = (event) => {
+                    const file = event.target.files[0];
+                    if (file) {
+                        uploadFile(file);
+                    }
+                };
+                
+                const handleFileDrop = (event) => {
+                    isDragging.value = false;
+                    const file = event.dataTransfer.files[0];
+                    if (file) {
+                        uploadFile(file);
+                    }
+                };
+                
+                const uploadFile = async (file) => {
+                    // 验证文件类型
+                    const allowedTypes = [
+                        'application/pdf',
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        'text/plain',
+                        'text/markdown'
+                    ];
+                    
+                    if (!allowedTypes.includes(file.type)) {
+                        uploadResult.value = {
+                            success: false,
+                            message: '不支持的文件类型，请上传 PDF、DOCX、TXT 或 MD 文件'
+                        };
+                        return;
+                    }
+                    
+                    uploadingFile.value = file;
+                    uploading.value = true;
+                    uploadingProgress.value = 0;
+                    uploadResult.value = null;
+                    
+                    try {
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        
+                        // 获取用户密码
+                        const password = localStorage.getItem(currentUser.value.username + '_password');
+                        
+                        const response = await fetch('/api/upload', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': 'Basic ' + btoa(currentUser.value.username + ':' + password)
+                            },
+                            body: formData
+                        });
+                        
+                        uploadingProgress.value = 100;
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            uploadResult.value = {
+                                success: true,
+                                message: '文件上传成功！AI 将基于此文档回答问题。'
+                            };
+                        } else {
+                            uploadResult.value = {
+                                success: false,
+                                message: data.detail || '上传失败'
+                            };
+                        }
+                    } catch (e) {
+                        uploadResult.value = {
+                            success: false,
+                            message: '网络错误，上传失败'
+                        };
+                    } finally {
+                        uploading.value = false;
+                        uploadingFile.value = null;
+                        uploadingProgress.value = 0;
+                    }
+                };
+                
+                // ==================== 聊天相关 ====================
+                
+                const sendMessage = async () => {
+                    if (!userInput.value.trim() || sending.value) return;
+                    
+                    const message = userInput.value.trim();
+                    userInput.value = '';
+                    sending.value = true;
+                    
+                    // 添加用户消息
+                    messages.value.push({
+                        role: 'user',
+                        content: message
+                    });
+                    
+                    // 添加空消息用于流式响应
+                    messages.value.push({
+                        role: 'assistant',
+                        content: '',
+                        loading: true
+                    });
+                    
+                    await scrollToBottom();
+                    
+                    try {
+                        const password = localStorage.getItem(currentUser.value.username + '_password');
+                        
+                        const response = await fetch('/api/chat', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': 'Basic ' + btoa(currentUser.value.username + ':' + password)
+                            },
+                            body: JSON.stringify({
+                                message: message
+                            })
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error('请求失败');
+                        }
+                        
+                        // 读取流式响应
+                        const reader = response.body.getReader();
+                        const decoder = new TextDecoder();
+                        let assistantMessage = '';
+                        
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            
+                            const chunk = decoder.decode(value);
+                            const lines = chunk.split('\n\n');
+                            
+                            for (const line of lines) {
+                                if (line.startsWith('data: ')) {
+                                    try {
+                                        const data = JSON.parse(line.slice(6));
+                                        
+                                        // 处理不同的消息类型
+                                        if (data.choices && data.choices[0]) {
+                                            const delta = data.choices[0].delta;
+                                            if (delta && delta.content) {
+                                                assistantMessage += delta.content;
+                                                messages.value[messages.value.length - 1].content = assistantMessage;
+                                                messages.value[messages.value.length - 1].loading = false;
+                                                await scrollToBottom();
+                                            }
+                                        }
+                                    } catch (e) {
+                                        // 忽略解析错误
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // 移除 loading 状态
+                        messages.value[messages.value.length - 1].loading = false;
+                        
+                    } catch (e) {
+                        console.error('聊天错误:', e);
+                        messages.value[messages.value.length - 1].content = '抱歉，发生了错误，请重试。';
+                        messages.value[messages.value.length - 1].loading = false;
+                    } finally {
+                        sending.value = false;
+                        await scrollToBottom();
+                    }
+                };
+                
+                // ==================== 生命周期 ====================
+                
+                onMounted(() => {
+                    initAuth();
+                });
+                
+                return {
+                    // 响应式数据
+                    isLoggedIn,
+                    currentUser,
+                    authMode,
+                    authLoading,
+                    authError,
+                    loginForm,
+                    registerForm,
+                    fileInput,
+                    isDragging,
+                    uploadingFile,
+                    uploading,
+                    uploadingProgress,
+                    uploadResult,
+                    messages,
+                    userInput,
+                    sending,
+                    chatContainer,
+                    
+                    // 方法
+                    handleLogin,
+                    handleRegister,
+                    logout,
+                    handleFileSelect,
+                    handleFileDrop,
+                    sendMessage,
+                    renderMarkdown
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
