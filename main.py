@@ -27,10 +27,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import requests
-import os
+from contextlib import asynccontextmanager
+
 
 # =============================================================================
 # 环境变量配置
@@ -41,10 +42,50 @@ FASTGPT_ADMIN_KEY = os.getenv("FASTGPT_ADMIN_KEY", "your-admin-key-here")
 FASTGPT_CHAT_APP_KEY = os.getenv("FASTGPT_CHAT_APP_KEY", "your-chat-app-key-here")
 FASTGPT_BASE_URL = os.getenv("FASTGPT_BASE_URL", "https://fastgpt.aiown.top")
 
+
+# =============================================================================
 # FastGPT API 端点
+# =============================================================================
 FASTGPT_CREATE_DATASET_URL = f"{FASTGPT_BASE_URL}/api/core/dataset/create"
 FASTGPT_UPLOAD_FILE_URL = f"{FASTGPT_BASE_URL}/api/core/dataset/collection/create/localFile"
 FASTGPT_CHAT_URL = f"{FASTGPT_BASE_URL}/api/v1/chat/completions"
+
+
+# =============================================================================
+# 应用生命周期管理 (使用现代 lifespan 方式)
+# =============================================================================
+
+def init_database():
+    """
+    初始化数据库，创建必要的表
+    """
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            fastgpt_dataset_id TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_username ON users(username)
+    ''')
+    conn.commit()
+    conn.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    应用生命周期管理
+    """
+    init_database()
+    print("应用启动完成")
+    yield
+
 
 # =============================================================================
 # FastAPI 应用初始化
@@ -54,7 +95,8 @@ app = FastAPI(
     description="MVP: 每个用户拥有独立的 FastGPT 知识库，支持文件上传和智能对话",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # 配置 CORS（允许跨域请求）
@@ -66,15 +108,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 挂载静态文件和模板（如果需要）
-# app.mount("/static", StaticFiles(directory="static"), name="static")
-# templates = Jinja2Templates(directory="templates")
+# 挂载前端静态文件
+app.mount("/static", StaticFiles(directory="."), name="static")
 
 # 安全认证
 security = HTTPBasic()
 
 # 数据库路径
 DATABASE_PATH = "knowledge_base.db"
+
 
 # =============================================================================
 # 数据库操作
@@ -470,29 +512,12 @@ class ChatResponse(BaseModel):
     message: str
 
 
-@app.on_event("startup")
-async def startup_event():
-    """
-    应用启动时初始化数据库
-    """
-    init_database()
-    print("应用启动完成")
-
-
 @app.get("/")
 async def root():
     """
-    根路径，返回前端入口
-    
-    Returns:
-        dict: 应用信息
+    根路径，返回前端页面
     """
-    return {
-        "name": "多用户隔离 AI 知识库助手",
-        "version": "1.0.0",
-        "status": "running",
-        "docs": "/docs"
-    }
+    return FileResponse('index.html')
 
 
 @app.post("/api/auth/register", response_model=dict)
