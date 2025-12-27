@@ -18,13 +18,10 @@ import json
 import sqlite3
 import hashlib
 import uuid
-import aiofiles
 from typing import Optional
-from datetime import datetime, timedelta
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request, status
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
